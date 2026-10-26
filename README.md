@@ -677,19 +677,47 @@ end
 
 task.spawn(function()
 	task.wait(2.5)
-	-- 前 20 秒內多掃幾次（切分頁時新文字會出現）
-	for i = 1, 25 do
+
+	-- 先掃幾次把現有選單翻完
+	for _ = 1, 8 do
 		scanAll()
-		task.wait(0.6)
+		task.wait(0.5)
 	end
-	print("[河馬] 中文層掃描完成")
+	print("[河馬] 中文層就緒（輕量持續掃描）")
 
 	local root = getRoot()
 	if root then
+		-- 新節點出現就翻（幾乎不卡）
 		pcall(function()
 			root.DescendantAdded:Connect(function(obj)
 				task.defer(tryOne, obj)
 			end)
+		end)
+	end
+
+	-- 輕量補掃：每 4 秒一次，且每批只處理有限數量，避免卡
+	while true do
+		task.wait(4)
+		local root2 = getRoot()
+		if not root2 then continue end
+		local batch = 0
+		pcall(function()
+			for _, child in ipairs(root2:GetChildren()) do
+				local ok = false
+				pcall(function()
+					ok = child:IsA("ScreenGui") or child:IsA("Folder") or child:IsA("Frame")
+				end)
+				if not ok then continue end
+				for _, obj in ipairs(child:GetDescendants()) do
+					if not done[obj] then
+						tryOne(obj)
+						batch = batch + 1
+						if batch % 80 == 0 then
+							task.wait() -- 讓出一幀，不卡
+						end
+					end
+				end
+			end
 		end)
 	end
 end)
